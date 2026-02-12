@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Happy Valentine's Day – Heart & Rose</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Century Gothic', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: radial-gradient(circle at 50% 50%, #3a1212 0%, #1f0909 40%, #0c0404 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+            cursor: grab;
+        }
+        #canvas-container:active { cursor: grabbing; }
+
+        /* ---- hold hint ---- */
+        .instructions {
+            position: absolute;
+            top: 25px;
+            width: 100%;
+            text-align: center;
+            font-size: 1rem;
+            color: rgba(255, 220, 220, 0.9);
+            text-shadow: 0 0 10px #ff3b6f;
+            animation: pulse 2.2s infinite;
+            z-index: 4;
+            letter-spacing: 2px;
+            pointer-events: none;
+        }
+
+        /* ---- progress ring (follows cursor/touch) ---- */
+        #hold-ring {
+            position: fixed;
+            pointer-events: none;
+            z-index: 10;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+        #hold-ring svg circle.track {
+            fill: none;
+            stroke: rgba(255,100,130,0.2);
+            stroke-width: 4;
+        }
+        #hold-ring svg circle.progress-fill {
+            fill: none;
+            stroke: #ff4d6d;
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-dasharray: 157;
+            stroke-dashoffset: 157;
+            filter: drop-shadow(0 0 6px #ff1a4d);
+        }
+
+        /* ---- state label ---- */
+        #state-label {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 0.95rem;
+            letter-spacing: 3px;
+            color: rgba(255,200,210,0.75);
+            text-shadow: 0 0 8px #ff3b5c;
+            z-index: 4;
+            pointer-events: none;
+            transition: opacity 0.4s;
+            user-select: none;
+        }
+
+        /* ---- button ---- */
+        .content {
+            position: absolute;
+            bottom: 20px;
+            z-index: 3;
+            text-align: center;
+            color: white;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+        .button-label {
+            font-size: 0.95rem;
+            margin-top: 5px;
+            opacity: 0.85;
+            pointer-events: none;
+            color: rgba(255,220,220,0.8);
+        }
+        .valentine-button {
+            pointer-events: auto;
+            background: rgba(255, 80, 120, 0.18);
+            backdrop-filter: blur(4px);
+            border: 1.5px solid rgba(255, 140, 170, 0.7);
+            padding: 15px 45px;
+            font-size: 1.9rem;
+            color: white;
+            border-radius: 60px;
+            cursor: pointer;
+            box-shadow: 0 8px 30px rgba(255, 30, 80, 0.5);
+            transition: all 0.3s ease;
+            font-weight: bold;
+            text-shadow: 0 0 12px #ff4d6d;
+            letter-spacing: 3px;
+        }
+        .valentine-button:hover {
+            transform: translateY(-5px) scale(1.03);
+            box-shadow: 0 16px 40px rgba(255, 40, 100, 0.8);
+            background: rgba(255, 110, 150, 0.25);
+            border-color: rgba(255, 200, 220, 0.9);
+        }
+
+        /* ---- floating bg hearts ---- */
+        .heart-bg {
+            position: fixed;
+            font-size: 22px;
+            color: rgba(255, 160, 180, 0.25);
+            animation: float 12s infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        @keyframes float {
+            0%   { transform: translateY(110vh) rotate(0deg);   opacity: 0; }
+            20%  { opacity: 0.4; }
+            90%  { opacity: 0.3; }
+            100% { transform: translateY(-30px) rotate(400deg); opacity: 0; }
+        }
+        @keyframes pulse {
+            0%,100% { opacity: 0.7; text-shadow: 0 0 8px #ff5e7c; }
+            50%      { opacity: 1;   text-shadow: 0 0 20px #ff1e4d; }
+        }
+        @keyframes fadeIn  {
+            from { opacity: 0; transform: translateY(-25px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(60px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---- modal ---- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(25, 5, 10, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.35s ease;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: linear-gradient(145deg, #fff9f7, #ffeef0);
+            padding: 40px 40px 45px;
+            border-radius: 32px;
+            max-width: 550px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 70px rgba(200, 20, 60, 0.6);
+            position: relative;
+            animation: slideUp 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+            color: #3a1a1a;
+            border: 2px solid rgba(255, 160, 180, 0.6);
+        }
+        .close-button {
+            position: absolute;
+            top: 12px; right: 18px;
+            font-size: 2.4rem;
+            background: none; border: none;
+            color: #c1344b;
+            cursor: pointer;
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .close-button:hover {
+            background: rgba(255,70,100,0.15);
+            transform: rotate(90deg) scale(1.1);
+            color: #ff1a4f;
+        }
+        .modal-content h2 {
+            color: #b22b45;
+            font-size: 2.1rem;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .modal-content .message {
+            font-size: 1.12rem;
+            line-height: 1.9;
+            color: #2c1c1c;
+            margin-bottom: 20px;
+            padding: 0 6px;
+        }
+        .modal-content .message p {
+            color: #2c1c1c;
+            text-shadow: none;
+            margin-bottom: 16px;
+        }
+        .modal-content .signature {
+            text-align: right;
+            font-style: italic;
+            color: #b03850;
+            margin-top: 25px;
+            font-size: 1.25rem;
+            font-weight: 600;
+            border-top: 1px dashed #e68a9e;
+            padding-top: 20px;
+        }
+
+        @media (max-width: 480px) {
+            .valentine-button { font-size: 1.6rem; padding: 12px 25px; }
+            .modal-content { padding: 30px 20px; }
+            .modal-content h2 { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <!-- hold-progress ring -->
+    <div id="hold-ring">
+        <svg width="60" height="60" viewBox="0 0 60 60">
+            <circle class="track"         cx="30" cy="30" r="25"/>
+            <circle class="progress-fill" cx="30" cy="30" r="25"
+                    transform="rotate(-90 30 30)"/>
+        </svg>
+    </div>
+
+    <div id="state-label">HOLD to reveal </div>
+
+
+    <!-- button -->
+    <div class="content">
+        <div>
+            <button class="valentine-button" onclick="openModal('modal1')">Happy Valentine's!</button>
+            <p class="button-label">A Message for You</p>
+        </div>
+    </div>
+
+    <!-- modal -->
+    <div class="modal-overlay" id="modal1" onclick="closeModalOnOverlay(event,'modal1')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <button class="close-button" onclick="closeModal('modal1')">×</button>
+            <h2>💌</h2>
+            <div class="message">
+                <p>Briana,</p>
+                <p>Ngayong Valentine's Day, gusto ko lang ipaalam sa'yo kung gaano ako ka-thankful na nakilala kita kahit di pa tayo magkasama at nakikita sa personal.</p>
+                <p>Lagi mo ako nirereassure kahit hindi ko hinihingi, and it's best that way. Hindi lang ikaw ang nandiyan para sa'kin, nandito rin ako para sa'yo.</p>
+                <p>This is my way of showing you on how much I care for you. I am your "Dilaw".</p>
+                <p>I'm always here for you, don't hesitate to tell me anything kahit may maliliit na bagay. I haven't broken my promise. Wala akong sinasasabi about finding someone better and perfect. What i want is someone special. And that's you. No one else. Just you.</p>
+            </div>
+            <div class="signature">
+                Happy Valentine's Day,<br>Cj
+            </div>
+            <br>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+    // ============================================================
+    //  FLOATING BG HEARTS (ambiance)
+    // ============================================================
+    (function() {
+        for (let i = 0; i < 22; i++) {
+            const h = document.createElement('div');
+            h.className = 'heart-bg';
+            h.innerHTML = '❤️';
+            h.style.left = Math.random() * 100 + '%';
+            h.style.bottom = '-60px';
+            h.style.animationDelay = Math.random() * 12 + 's';
+            h.style.animationDuration = (Math.random() * 6 + 10) + 's';
+            h.style.fontSize = (Math.random() * 28 + 16) + 'px';
+            document.body.appendChild(h);
+        }
+    })();
+
+    // ============================================================
+    //  THREE.JS SCENE
+    // ============================================================
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setClearColor(0x000000, 0);
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+    camera.position.z = 8.7;
+
+    // ============================================================
+    //  SHAPE GENERATORS
+    // ============================================================
+    function getHeartXY(t, scale) {
+        return {
+            x: scale * 16 * Math.pow(Math.sin(t), 3),
+            y: scale * (13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t))
+        };
+    }
+
+    function get3DHeartPos(index, total) {
+        const numLayers = 16;
+        const perLayer  = total / numLayers;
+        const layer     = Math.floor(index / perLayer);
+        const idx       = index % Math.floor(perLayer);
+        const t         = (idx / Math.floor(perLayer)) * Math.PI * 2;
+        const df        = (layer - numLayers/2) / (numLayers/2);
+        const scale     = 0.105 * (1 - Math.abs(df)*0.25);
+        const h         = getHeartXY(t, scale);
+        return { x: h.x, y: h.y, z: df * 0.6 };
+    }
+
+    function getRosePos(idx, total) {
+        const norm = idx / total;
+        const t1   = norm * Math.PI * 12;
+        const t2   = norm * Math.PI * 8;
+
+        // stamen dots
+        if (idx % 7 === 0) {
+            return {
+                x: 0.12 * Math.cos(t2*10) * Math.sin(t1),
+                y: 0.12 * Math.sin(t2*10) * 0.8 - 0.12,
+                z: Math.sin(t1) * 0.1
+            };
+        }
+        let r;
+        if      (idx % 3 === 0) r = 0.65 * Math.abs(Math.sin(4 * t1 * 0.9));
+        else if (idx % 3 === 1) r = 0.55 * Math.abs(Math.sin(5 * t1 * 0.8));
+        else                    r = 0.35 * (0.7 + 0.3 * Math.sin(t2 * 1.5));
+
+        r = r * (0.85 + 0.2 * Math.sin(t2*5)) + 0.1 * Math.sin(t1*8) * 0.15;
+        r = Math.min(r, 0.85);
+        let angle = t1 + (idx % 5 === 0 ? 0.4 : 0);
+        return {
+            x: r * Math.cos(angle) * 0.95,
+            y: r * Math.sin(angle) * 0.9 - 0.1,
+            z: (Math.sin(t1*0.9)*0.12 + Math.cos(angle*0.5)*0.06) * 0.6
+        };
+    }
+
+    // ============================================================
+    //  BUFFERS
+    // ============================================================
+    const HEART_N = 2000, ROSE_N = 10000, TOTAL = HEART_N + ROSE_N;
+
+    const posArr    = new Float32Array(TOTAL * 3);
+    const colArr    = new Float32Array(TOTAL * 3);
+    const initPos   = new Float32Array(TOTAL * 3);  // sphere
+    const targetPos = new Float32Array(TOTAL * 3);  // heart+rose
+
+    // heart shell targets
+    for (let i = 0; i < HEART_N; i++) {
+        const p = get3DHeartPos(i, HEART_N);
+        targetPos[i*3] = p.x; targetPos[i*3+1] = p.y; targetPos[i*3+2] = p.z;
+        const w = Math.random();
+        colArr[i*3] = 1.0; colArr[i*3+1] = w*0.3+0.1; colArr[i*3+2] = w*0.3+0.15;
+    }
+
+    // rose targets
+    for (let i = 0; i < ROSE_N; i++) {
+        const id = i + HEART_N;
+        const rp = getRosePos(i, ROSE_N);
+        targetPos[id*3] = rp.x*0.88; targetPos[id*3+1] = rp.y*0.9+0.04; targetPos[id*3+2] = rp.z*0.8;
+        const rand = Math.random();
+        let r, g, b;
+        if      (rand < 0.55) { r=0.95; g=0.1+Math.random()*0.15; b=0.15+Math.random()*0.15; }
+        else if (rand < 0.85) { r=0.75; g=0.05+Math.random()*0.1;  b=0.1+Math.random()*0.1;  }
+        else                  { r=1.0;  g=0.4+Math.random()*0.2;   b=0.5+Math.random()*0.2;  }
+        colArr[id*3]   = r*(0.8+Math.random()*0.25);
+        colArr[id*3+1] = g*(0.7+Math.random()*0.3);
+        colArr[id*3+2] = b*(0.8+Math.random()*0.25);
+    }
+
+    // sphere initial positions
+    for (let i = 0; i < TOTAL; i++) {
+        const rad = 3.4;
+        const th  = Math.random() * Math.PI * 2;
+        const ph  = Math.acos(Math.random()*2 - 1);
+        initPos[i*3]   = rad * Math.sin(ph) * Math.cos(th);
+        initPos[i*3+1] = rad * Math.sin(ph) * Math.sin(th);
+        initPos[i*3+2] = rad * Math.cos(ph);
+        posArr[i*3]   = initPos[i*3];
+        posArr[i*3+1] = initPos[i*3+1];
+        posArr[i*3+2] = initPos[i*3+2];
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
+
+    const mat = new THREE.PointsMaterial({
+        size: 0.026, vertexColors: true,
+        transparent: true, opacity: 0.96,
+        sizeAttenuation: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    const ps = new THREE.Points(geo, mat);
+    scene.add(ps);
+
+    // lights
+    const ambient = new THREE.AmbientLight(0x404060); scene.add(ambient);
+    const light1  = new THREE.PointLight(0xff4466, 1.3); light1.position.set(3,3,6);  scene.add(light1);
+    const light2  = new THREE.PointLight(0xff88aa, 0.9); light2.position.set(-4,2,7); scene.add(light2);
+    const light3  = new THREE.PointLight(0xcc4455, 0.7); light3.position.set(2,-3,5); scene.add(light3);
+
+    // ============================================================
+    //  INTERACTION STATE
+    // ============================================================
+    let isDown        = false;   // pointer currently pressed on canvas
+    let holdProgress  = 0;       // 0..1 (visual ring fill)
+    let formation     = 0;       // 0..1 (smooth lerp for particles)
+    let targetForm    = 0;       // what formation wants to be
+    const HOLD_MS     = 800;     // ms to fully form
+    let holdStart     = null;
+
+    let prevMouse  = { x:0, y:0 };
+    let targetRot  = { x:0, y:0 };
+    let currentRot = { x:0, y:0 };
+    let pointerPos = { x: innerWidth/2, y: innerHeight/2 };
+
+    // hold-ring elements
+    const ringEl   = document.getElementById('hold-ring');
+    const ringFill = ringEl.querySelector('.progress-fill');
+    const CIRCUM   = 2 * Math.PI * 25; // ~157
+
+    const stateLbl = document.getElementById('state-label');
+
+    function updateRing(progress, x, y) {
+        if (progress <= 0.005) { ringEl.style.display = 'none'; return; }
+        ringEl.style.display = 'block';
+        ringEl.style.left    = x + 'px';
+        ringEl.style.top     = y + 'px';
+        ringFill.style.strokeDashoffset = CIRCUM * (1 - progress);
+    }
+
+    function getXY(e) {
+        if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    // ---- pointer down: start hold ----
+    function onDown(e) {
+        if (e.target !== renderer.domElement) return;
+        e.preventDefault();
+        isDown    = true;
+        holdStart = performance.now();
+        const pt  = getXY(e);
+        pointerPos = pt;
+        prevMouse  = { x: pt.x, y: pt.y };
+        stateLbl.textContent = 'hold to bloom…';
+    }
+
+    // ---- pointer move: drag rotation ----
+    function onMove(e) {
+        const pt = getXY(e);
+        pointerPos = pt;
+        if (!isDown) return;
+        e.preventDefault();
+        const dx = pt.x - prevMouse.x;
+        const dy = pt.y - prevMouse.y;
+        targetRot.y += dx * 0.008;
+        targetRot.x += dy * 0.008;
+        prevMouse = { x: pt.x, y: pt.y };
+    }
+
+    // ---- pointer up: release, scatter back ----
+    function onUp(e) {
+        if (!isDown) return;
+        isDown    = false;
+        holdStart = null;
+        stateLbl.textContent = 'HOLD to reveal ';
+        updateRing(0, pointerPos.x, pointerPos.y);
+    }
+
+    const el = renderer.domElement;
+    el.addEventListener('mousedown',   onDown, { passive:false });
+    window.addEventListener('mousemove', onMove, { passive:false });
+    window.addEventListener('mouseup',   onUp);
+    el.addEventListener('touchstart',  onDown, { passive:false });
+    window.addEventListener('touchmove',  onMove, { passive:false });
+    window.addEventListener('touchend',   onUp);
+    window.addEventListener('touchcancel',onUp);
+
+    window.addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ============================================================
+    //  ANIMATION LOOP
+    // ============================================================
+    function animate() {
+        requestAnimationFrame(animate);
+        const now  = performance.now();
+        const time = now * 0.001;
+
+        // --- hold progress ---
+        if (isDown && holdStart !== null) {
+            holdProgress = Math.min(1, (now - holdStart) / HOLD_MS);
+        } else {
+            // smooth release – decay back to 0
+            holdProgress = Math.max(0, holdProgress - 0.025);
+        }
+
+        targetForm = holdProgress;
+        formation += (targetForm - formation) * 0.06;
+
+        // ring UI
+        updateRing(holdProgress, pointerPos.x, pointerPos.y);
+        if (isDown && holdProgress >= 0.99) stateLbl.textContent = 'release to scatter';
+
+        // --- particle positions ---
+        const pa = ps.geometry.attributes.position.array;
+        for (let i = 0; i < TOTAL; i++) {
+            const i3 = i * 3;
+            pa[i3]   = initPos[i3]   + (targetPos[i3]   - initPos[i3])   * formation;
+            pa[i3+1] = initPos[i3+1] + (targetPos[i3+1] - initPos[i3+1]) * formation;
+            pa[i3+2] = initPos[i3+2] + (targetPos[i3+2] - initPos[i3+2]) * formation;
+            // gentle living shimmer when near formed
+            if (formation > 0.4) {
+                pa[i3]   += Math.sin(time*1.7 + i*0.018) * 0.0016 * formation;
+                pa[i3+1] += Math.cos(time*1.6 + i*0.02)  * 0.0016 * formation;
+            }
+        }
+        ps.geometry.attributes.position.needsUpdate = true;
+
+        // --- rotation ---
+        currentRot.x += (targetRot.x - currentRot.x) * 0.1;
+        currentRot.y += (targetRot.y - currentRot.y) * 0.1;
+        ps.rotation.x = currentRot.x;
+        ps.rotation.y = currentRot.y;
+
+        // idle auto-spin when released
+        if (!isDown) {
+            ps.rotation.y += 0.0016;
+            targetRot.y   += 0.0016;
+        }
+
+        // pulse size
+        mat.size = 0.027 + Math.sin(time*4.5) * 0.004 * formation;
+
+        // animate lights
+        light1.position.x = Math.sin(time*0.6)*5;
+        light1.position.y = Math.cos(time*0.5)*4.5;
+        light2.position.x = Math.cos(time*0.7)*5;
+        light2.position.y = Math.sin(time*0.6)*4;
+
+        renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // ============================================================
+    //  MODAL
+    // ============================================================
+    function openModal(id)  { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function closeModalOnOverlay(ev, id) { if (ev.target === ev.currentTarget) closeModal(id); }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal('modal1'); });
+    </script>
+</body>
+</html>
