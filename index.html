@@ -82,6 +82,22 @@
             user-select: none;
         }
 
+        /* ---- zoom hint ---- */
+        #zoom-hint {
+            position: absolute;
+            bottom: 110px;
+            width: 100%;
+            text-align: center;
+            font-size: 0.78rem;
+            letter-spacing: 2px;
+            color: rgba(255,200,210,0.45);
+            text-shadow: 0 0 6px #ff3b5c;
+            z-index: 4;
+            pointer-events: none;
+            user-select: none;
+            animation: pulse 3s infinite;
+        }
+
         /* ---- button ---- */
         .content {
             position: absolute;
@@ -253,6 +269,8 @@
 
     <div id="state-label">HOLD to reveal </div>
 
+    <!-- zoom / scroll hint -->
+    <div id="zoom-hint">scroll to zoom · pinch to zoom</div>
 
     <!-- button -->
     <div class="content">
@@ -272,7 +290,7 @@
                 <p>Ngayong Valentine's Day, gusto ko lang ipaalam sa'yo kung gaano ako ka-thankful na nakilala kita kahit di pa tayo magkasama at nakikita sa personal.</p>
                 <p>Lagi mo ako nirereassure kahit hindi ko hinihingi, and it's best that way. Hindi lang ikaw ang nandiyan para sa'kin, nandito rin ako para sa'yo.</p>
                 <p>This is my way of showing you on how much I care for you. I am your "Dilaw".</p>
-                <p>I'm always here for you, don't hesitate to tell me anything kahit may maliliit na bagay. I haven't broken my promise. Wala akong sinasasabi about finding someone better and perfect. What i want is someone special. And that's you. No one else. Just you.</p>
+                <p>I'm always here for you, don't hesitate to tell me anything kahit may maliliit na bagay. I haven't broke my promise. Wala akong sinasasabi about finding someone better and perfect. What i want is someone special. And that's you. No one else. Just you.</p>
             </div>
             <div class="signature">
                 Happy Valentine's Day,<br>Cj
@@ -309,7 +327,13 @@
     renderer.setSize(innerWidth, innerHeight);
     renderer.setClearColor(0x000000, 0);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
-    camera.position.z = 8.7;
+
+    // ---- camera zoom state ----
+    const CAM_MIN  = 2.5;   // closest (zoomed in)
+    const CAM_MAX  = 18;    // farthest (zoomed out)
+    let targetZ    = 8.7;   // desired camera z
+    let currentZ   = 8.7;   // smooth-lerped camera z
+    camera.position.z = currentZ;
 
     // ============================================================
     //  SHAPE GENERATORS
@@ -338,7 +362,6 @@
         const t1   = norm * Math.PI * 12;
         const t2   = norm * Math.PI * 8;
 
-        // stamen dots
         if (idx % 7 === 0) {
             return {
                 x: 0.12 * Math.cos(t2*10) * Math.sin(t1),
@@ -368,10 +391,9 @@
 
     const posArr    = new Float32Array(TOTAL * 3);
     const colArr    = new Float32Array(TOTAL * 3);
-    const initPos   = new Float32Array(TOTAL * 3);  // sphere
-    const targetPos = new Float32Array(TOTAL * 3);  // heart+rose
+    const initPos   = new Float32Array(TOTAL * 3);
+    const targetPos = new Float32Array(TOTAL * 3);
 
-    // heart shell targets
     for (let i = 0; i < HEART_N; i++) {
         const p = get3DHeartPos(i, HEART_N);
         targetPos[i*3] = p.x; targetPos[i*3+1] = p.y; targetPos[i*3+2] = p.z;
@@ -379,7 +401,6 @@
         colArr[i*3] = 1.0; colArr[i*3+1] = w*0.3+0.1; colArr[i*3+2] = w*0.3+0.15;
     }
 
-    // rose targets
     for (let i = 0; i < ROSE_N; i++) {
         const id = i + HEART_N;
         const rp = getRosePos(i, ROSE_N);
@@ -394,7 +415,6 @@
         colArr[id*3+2] = b*(0.8+Math.random()*0.25);
     }
 
-    // sphere initial positions
     for (let i = 0; i < TOTAL; i++) {
         const rad = 3.4;
         const th  = Math.random() * Math.PI * 2;
@@ -422,7 +442,6 @@
     const ps = new THREE.Points(geo, mat);
     scene.add(ps);
 
-    // lights
     const ambient = new THREE.AmbientLight(0x404060); scene.add(ambient);
     const light1  = new THREE.PointLight(0xff4466, 1.3); light1.position.set(3,3,6);  scene.add(light1);
     const light2  = new THREE.PointLight(0xff88aa, 0.9); light2.position.set(-4,2,7); scene.add(light2);
@@ -431,11 +450,11 @@
     // ============================================================
     //  INTERACTION STATE
     // ============================================================
-    let isDown        = false;   // pointer currently pressed on canvas
-    let holdProgress  = 0;       // 0..1 (visual ring fill)
-    let formation     = 0;       // 0..1 (smooth lerp for particles)
-    let targetForm    = 0;       // what formation wants to be
-    const HOLD_MS     = 800;     // ms to fully form
+    let isDown        = false;
+    let holdProgress  = 0;
+    let formation     = 0;
+    let targetForm    = 0;
+    const HOLD_MS     = 800;
     let holdStart     = null;
 
     let prevMouse  = { x:0, y:0 };
@@ -443,10 +462,15 @@
     let currentRot = { x:0, y:0 };
     let pointerPos = { x: innerWidth/2, y: innerHeight/2 };
 
-    // hold-ring elements
+    // ---- right-click / middle-mouse pan ----
+    let isPanning   = false;
+    let prevPanPos  = { x:0, y:0 };
+    let panOffset   = { x:0, y:0 };   // world-space pan (applied to ps.position)
+    let targetPan   = { x:0, y:0 };
+
     const ringEl   = document.getElementById('hold-ring');
     const ringFill = ringEl.querySelector('.progress-fill');
-    const CIRCUM   = 2 * Math.PI * 25; // ~157
+    const CIRCUM   = 2 * Math.PI * 25;
 
     const stateLbl = document.getElementById('state-label');
 
@@ -463,10 +487,41 @@
         return { x: e.clientX, y: e.clientY };
     }
 
-    // ---- pointer down: start hold ----
-    function onDown(e) {
-        if (e.target !== renderer.domElement) return;
+    // ============================================================
+    //  ZOOM — mouse wheel
+    // ============================================================
+    function onWheel(e) {
         e.preventDefault();
+        const delta = e.deltaY * 0.01;   // positive = scroll down = zoom out
+        targetZ = Math.max(CAM_MIN, Math.min(CAM_MAX, targetZ + delta));
+    }
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    // ============================================================
+    //  ZOOM — pinch-to-zoom (touch)
+    // ============================================================
+    let lastPinchDist = null;
+
+    function getPinchDist(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    // ============================================================
+    //  LEFT-DRAG = rotate | RIGHT-DRAG / middle-drag = pan
+    // ============================================================
+    function onDown(e) {
+        e.preventDefault();
+
+        // right-click or middle-click → pan
+        if (e.button === 1 || e.button === 2) {
+            isPanning  = true;
+            prevPanPos = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
+        if (e.target !== renderer.domElement) return;
         isDown    = true;
         holdStart = performance.now();
         const pt  = getXY(e);
@@ -475,10 +530,20 @@
         stateLbl.textContent = 'hold to bloom…';
     }
 
-    // ---- pointer move: drag rotation ----
     function onMove(e) {
         const pt = getXY(e);
         pointerPos = pt;
+
+        // panning
+        if (isPanning) {
+            e.preventDefault();
+            const speed = currentZ * 0.0012;
+            targetPan.x += (pt.x - prevPanPos.x) * speed;
+            targetPan.y -= (pt.y - prevPanPos.y) * speed;
+            prevPanPos = { x: pt.x, y: pt.y };
+            return;
+        }
+
         if (!isDown) return;
         e.preventDefault();
         const dx = pt.x - prevMouse.x;
@@ -488,8 +553,8 @@
         prevMouse = { x: pt.x, y: pt.y };
     }
 
-    // ---- pointer up: release, scatter back ----
     function onUp(e) {
+        isPanning = false;
         if (!isDown) return;
         isDown    = false;
         holdStart = null;
@@ -497,14 +562,42 @@
         updateRing(0, pointerPos.x, pointerPos.y);
     }
 
+    // prevent context menu on right-click
+    renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
     const el = renderer.domElement;
     el.addEventListener('mousedown',   onDown, { passive:false });
     window.addEventListener('mousemove', onMove, { passive:false });
     window.addEventListener('mouseup',   onUp);
-    el.addEventListener('touchstart',  onDown, { passive:false });
-    window.addEventListener('touchmove',  onMove, { passive:false });
-    window.addEventListener('touchend',   onUp);
-    window.addEventListener('touchcancel',onUp);
+
+    // ---- touch events (rotate, hold, pinch-zoom) ----
+    el.addEventListener('touchstart', e => {
+        e.preventDefault();
+        if (e.touches.length === 2) {
+            lastPinchDist = getPinchDist(e.touches);
+            isDown = false; holdStart = null;   // cancel hold during pinch
+        } else {
+            onDown(e);
+        }
+    }, { passive:false });
+
+    window.addEventListener('touchmove', e => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const d = getPinchDist(e.touches);
+            if (lastPinchDist !== null) {
+                const scale = lastPinchDist / d;   // >1 = spread = zoom in
+                targetZ = Math.max(CAM_MIN, Math.min(CAM_MAX, targetZ * scale));
+            }
+            lastPinchDist = d;
+            return;
+        }
+        lastPinchDist = null;
+        onMove(e);
+    }, { passive:false });
+
+    window.addEventListener('touchend',    e => { lastPinchDist = null; onUp(e); });
+    window.addEventListener('touchcancel', e => { lastPinchDist = null; onUp(e); });
 
     window.addEventListener('resize', () => {
         camera.aspect = innerWidth / innerHeight;
@@ -520,18 +613,26 @@
         const now  = performance.now();
         const time = now * 0.001;
 
+        // --- smooth zoom ---
+        currentZ += (targetZ - currentZ) * 0.08;
+        camera.position.z = currentZ;
+
+        // --- smooth pan ---
+        panOffset.x += (targetPan.x - panOffset.x) * 0.1;
+        panOffset.y += (targetPan.y - panOffset.y) * 0.1;
+        ps.position.x = panOffset.x;
+        ps.position.y = panOffset.y;
+
         // --- hold progress ---
         if (isDown && holdStart !== null) {
             holdProgress = Math.min(1, (now - holdStart) / HOLD_MS);
         } else {
-            // smooth release – decay back to 0
             holdProgress = Math.max(0, holdProgress - 0.025);
         }
 
         targetForm = holdProgress;
         formation += (targetForm - formation) * 0.06;
 
-        // ring UI
         updateRing(holdProgress, pointerPos.x, pointerPos.y);
         if (isDown && holdProgress >= 0.99) stateLbl.textContent = 'release to scatter';
 
@@ -542,7 +643,6 @@
             pa[i3]   = initPos[i3]   + (targetPos[i3]   - initPos[i3])   * formation;
             pa[i3+1] = initPos[i3+1] + (targetPos[i3+1] - initPos[i3+1]) * formation;
             pa[i3+2] = initPos[i3+2] + (targetPos[i3+2] - initPos[i3+2]) * formation;
-            // gentle living shimmer when near formed
             if (formation > 0.4) {
                 pa[i3]   += Math.sin(time*1.7 + i*0.018) * 0.0016 * formation;
                 pa[i3+1] += Math.cos(time*1.6 + i*0.02)  * 0.0016 * formation;
@@ -556,16 +656,13 @@
         ps.rotation.x = currentRot.x;
         ps.rotation.y = currentRot.y;
 
-        // idle auto-spin when released
         if (!isDown) {
             ps.rotation.y += 0.0016;
             targetRot.y   += 0.0016;
         }
 
-        // pulse size
         mat.size = 0.027 + Math.sin(time*4.5) * 0.004 * formation;
 
-        // animate lights
         light1.position.x = Math.sin(time*0.6)*5;
         light1.position.y = Math.cos(time*0.5)*4.5;
         light2.position.x = Math.cos(time*0.7)*5;
